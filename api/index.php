@@ -2561,7 +2561,7 @@ $sheetData = fetchGoogleSheetData();
 
         // Google Gemini API Configuration
         const GEMINI_API_KEY = 'AIzaSyCcyS9cNlYvYpYOG-AYKTalcVIVZa19YYI'; // เปลี่ยนเป็น API Key ของคุณ
-        const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+        const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
         // System prompt for AI context
         const SYSTEM_PROMPT = `คุณเป็นผู้เชี่ยวชาญด้านการเกษตรและการป้องกันแมลงศัตรูพืชที่มีประสบการณ์มากกว่า 20 ปี คุณมีความรู้เกี่ยวกับ:
