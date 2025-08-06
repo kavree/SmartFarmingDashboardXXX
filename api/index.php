@@ -7,22 +7,34 @@ header("Referrer-Policy: strict-origin-when-cross-origin");
 header("Content-Security-Policy: default-src 'self' https: data: 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https:;");
 header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
 
-// Start secure session
-ini_set('session.cookie_httponly', 1);
-ini_set('session.cookie_secure', 1);
-ini_set('session.use_only_cookies', 1);
-ini_set('session.cookie_samesite', 'Strict');
-session_start();
+// Start secure session (commented out for serverless)
+// ini_set('session.cookie_httponly', 1);
+// ini_set('session.cookie_secure', 1);
+// ini_set('session.use_only_cookies', 1);
+// ini_set('session.cookie_samesite', 'Strict');
+// session_start();
 
-// CSRF Protection
-if (!isset($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+// Stateless CSRF Protection (Double Submit Cookie)
+function generateCsrfToken() {
+    return bin2hex(random_bytes(32));
 }
 
+function getCsrfToken() {
+    if (isset($_COOKIE['csrf_token'])) {
+        return $_COOKIE['csrf_token'];
+    } else {
+        $token = generateCsrfToken();
+        setcookie('csrf_token', $token, 0, '/', '', false, true);
+        return $token;
+    }
+}
+
+$csrf_token = getCsrfToken();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    if (!isset($_POST['csrf_token']) || !isset($_COOKIE['csrf_token']) || $_POST['csrf_token'] !== $_COOKIE['csrf_token']) {
         http_response_code(403);
-        die('CSRF token validation failed');
+        die('CSRF token validation failed (stateless)');
     }
 }
 
@@ -1642,7 +1654,7 @@ $sheetData = fetchGoogleSheetData();
                     <div class="form-section">
                         <h4><i class="fas fa-pencil-alt"></i> ป้อนค่าแมลงที่ต้องการอัปเดต</h4>
                         <form method="POST">
-                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                             <div class="form-group">
                                 <label for="value">ค่าใหม่ :</label>
                                 <input type="number" name="value" id="value" required>
@@ -1671,7 +1683,7 @@ $sheetData = fetchGoogleSheetData();
                         
                         <h4 style="margin-top: 2rem;"><i class="fas fa-tint"></i> ระดับน้ำ (โซน A)</h4>
                         <form method="POST">
-                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                             <div class="form-group">
                                 <label for="water_level">ระดับน้ำ :</label>
                                 <select name="water_level" id="water_level" required>
@@ -1706,7 +1718,7 @@ $sheetData = fetchGoogleSheetData();
                         
                         <h4 style="margin-top: 2rem;"><i class="fas fa-tint"></i> ระดับน้ำ (โซน B)</h4>
                         <form method="POST">
-                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                             <div class="form-group">
                                 <label for="water_level_b">ระดับน้ำ :</label>
                                 <select name="water_level_b" id="water_level_b" required>
@@ -1900,7 +1912,7 @@ $sheetData = fetchGoogleSheetData();
                     <i class="fas fa-sync-alt"></i> อัพเดทข้อมูล
                 </button>
                 <form method="POST" style="display: inline-block;">
-                    <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                     <input type="hidden" name="download_spray_data" value="1">
                     <button type="submit" class="refresh-btn download-btn">
                         <i class="fas fa-download"></i> บันทึกข้อมูลการฉีดพ่น
