@@ -7,22 +7,34 @@ header("Referrer-Policy: strict-origin-when-cross-origin");
 header("Content-Security-Policy: default-src 'self' https: data: 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https:;");
 header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
 
-// Start secure session
-ini_set('session.cookie_httponly', 1);
-ini_set('session.cookie_secure', 1);
-ini_set('session.use_only_cookies', 1);
-ini_set('session.cookie_samesite', 'Strict');
-session_start();
+// Start secure session (commented out for serverless)
+// ini_set('session.cookie_httponly', 1);
+// ini_set('session.cookie_secure', 1);
+// ini_set('session.use_only_cookies', 1);
+// ini_set('session.cookie_samesite', 'Strict');
+// session_start();
 
-// CSRF Protection
-if (!isset($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+// Stateless CSRF Protection (Double Submit Cookie)
+function generateCsrfToken() {
+    return bin2hex(random_bytes(32));
 }
 
+function getCsrfToken() {
+    if (isset($_COOKIE['csrf_token'])) {
+        return $_COOKIE['csrf_token'];
+    } else {
+        $token = generateCsrfToken();
+        setcookie('csrf_token', $token, 0, '/', '', false, true);
+        return $token;
+    }
+}
+
+$csrf_token = getCsrfToken();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    if (!isset($_POST['csrf_token']) || !isset($_COOKIE['csrf_token']) || $_POST['csrf_token'] !== $_COOKIE['csrf_token']) {
         http_response_code(403);
-        die('CSRF token validation failed');
+        die('CSRF token validation failed (stateless)');
     }
 }
 
@@ -1608,6 +1620,68 @@ $sheetData = fetchGoogleSheetData();
                 max-width: 90%;
             }
         }
+        /* Section Title */
+        .section-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--text-color);
+            margin: 1.5rem 0 0.8rem 0;
+            padding: 0.4rem 0.8rem;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+        }
+        .section-title i {
+            color: var(--accent-color);
+            text-shadow: 0 2px 6px rgba(0, 188, 212, 0.25);
+        }
+
+        /* Chart Card */
+        .chart-card .card-header {
+            justify-content: space-between;
+        }
+        .chart-body {
+            height: 380px;
+            width: 100%;
+        }
+        .chart-body canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        .chart-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.8rem;
+        }
+        .chart-legend .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .chart-legend .legend-color {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.06) inset;
+        }
+
+        /* Smaller select for header */
+        .interval-selector.small {
+            padding: 0.5rem 0.8rem;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -1642,7 +1716,7 @@ $sheetData = fetchGoogleSheetData();
                     <div class="form-section">
                         <h4><i class="fas fa-pencil-alt"></i> ป้อนค่าแมลงที่ต้องการอัปเดต</h4>
                         <form method="POST">
-                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                             <div class="form-group">
                                 <label for="value">ค่าใหม่ :</label>
                                 <input type="number" name="value" id="value" required>
@@ -1669,75 +1743,7 @@ $sheetData = fetchGoogleSheetData();
                             <?php endif; ?>
                         </form>
                         
-                        <h4 style="margin-top: 2rem;"><i class="fas fa-tint"></i> ระดับน้ำ (โซน A)</h4>
-                        <form method="POST">
-                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
-                            <div class="form-group">
-                                <label for="water_level">ระดับน้ำ :</label>
-                                <select name="water_level" id="water_level" required>
-                                    <option value="">เลือก</option>
-                                    <option value="25">25%</option>
-                                    <option value="50">50%</option>
-                                    <option value="75">75%</option>
-                                    <option value="100">100%</option>
-                                </select>
-                                <button type="submit">
-                                    <i class="fas fa-save"></i> อัปเดต
-                                </button>
-                            </div>
-                            <?php if (!empty($water_message)): ?>
-                                <div id="water-success-message" class="success-message">
-                                    <i class="fas fa-check-circle"></i>
-                                    <p>อัปเดตระดับน้ำ <?php echo htmlspecialchars($_POST['water_level']); ?>% (โซน A) สำเร็จ</p>
-                                </div>
-                                <script>
-                                    setTimeout(function() {
-                                        const messageDiv = document.getElementById('water-success-message');
-                                        if (messageDiv) {
-                                            messageDiv.style.opacity = '0';
-                                            setTimeout(function() {
-                                                messageDiv.style.display = 'none';
-                                            }, 500);
-                                        }
-                                    }, 3000);
-                                </script>
-                            <?php endif; ?>
-                        </form>
                         
-                        <h4 style="margin-top: 2rem;"><i class="fas fa-tint"></i> ระดับน้ำ (โซน B)</h4>
-                        <form method="POST">
-                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
-                            <div class="form-group">
-                                <label for="water_level_b">ระดับน้ำ :</label>
-                                <select name="water_level_b" id="water_level_b" required>
-                                    <option value="">เลือก</option>
-                                    <option value="25">25%</option>
-                                    <option value="50">50%</option>
-                                    <option value="75">75%</option>
-                                    <option value="100">100%</option>
-                                </select>
-                                <button type="submit">
-                                    <i class="fas fa-save"></i> อัปเดต
-                                </button>
-                            </div>
-                            <?php if (!empty($water_message_b)): ?>
-                                <div id="water-success-message-b" class="success-message">
-                                    <i class="fas fa-check-circle"></i>
-                                    <p>อัปเดตระดับน้ำ <?php echo htmlspecialchars($_POST['water_level_b']); ?>% (โซน B) สำเร็จ</p>
-                                </div>
-                                <script>
-                                    setTimeout(function() {
-                                        const messageDiv = document.getElementById('water-success-message-b');
-                                        if (messageDiv) {
-                                            messageDiv.style.opacity = '0';
-                                            setTimeout(function() {
-                                                messageDiv.style.display = 'none';
-                                            }, 500);
-                                        }
-                                    }, 3000);
-                                </script>
-                            <?php endif; ?>
-                        </form>
                     </div>
 
                     <div class="threshold-display">
@@ -1753,6 +1759,7 @@ $sheetData = fetchGoogleSheetData();
             </div>
         </div>
 
+        <h2 class="section-title"><i class="fas fa-map-marker-alt"></i> โซน A</h2>
         <div class="container">
             <!-- Zone A -->
             <div class="card" id="sheet1-e2-card">
@@ -1761,7 +1768,7 @@ $sheetData = fetchGoogleSheetData();
                     <h3>ตั๊กแตนที่ตรวจพบ</h3>
                     <div class="status-container">
                         <span class="zone-badge">โซน A</span>
-                        <span class="card-status">ออนไลน์</span>
+                        
                     </div>
                 </div>
                 <div class="value-container">
@@ -1782,7 +1789,7 @@ $sheetData = fetchGoogleSheetData();
                     <h3>หนอนที่ตรวจพบ</h3>
                     <div class="status-container">
                         <span class="zone-badge">โซน A</span>
-                        <span class="card-status">ออนไลน์</span>
+                        
                     </div>
                 </div>
                 <div class="value-container">
@@ -1798,6 +1805,7 @@ $sheetData = fetchGoogleSheetData();
             </div>
         </div>
         
+        <h2 class="section-title"><i class="fas fa-map-marker-alt"></i> โซน B</h2>
         <div class="container">
             <!-- Zone B -->
             <div class="card" id="sheet2-e2-card">
@@ -1806,7 +1814,7 @@ $sheetData = fetchGoogleSheetData();
                     <h3>ตั๊กแตนที่ตรวจพบ</h3>
                     <div class="status-container">
                         <span class="zone-badge">โซน B</span>
-                        <span class="card-status">ออนไลน์</span>
+                        
                     </div>
                 </div>
                 <div class="value-container">
@@ -1827,7 +1835,7 @@ $sheetData = fetchGoogleSheetData();
                     <h3>หนอนที่ตรวจพบ</h3>
                     <div class="status-container">
                         <span class="zone-badge">โซน B</span>
-                        <span class="card-status">ออนไลน์</span>
+                        
                     </div>
                 </div>
                 <div class="value-container">
@@ -1843,6 +1851,7 @@ $sheetData = fetchGoogleSheetData();
             </div>
         </div>
         
+        <h2 class="section-title"><i class="fas fa-tint"></i> ปริมาณน้ำ</h2>
         <div class="container">
             <!-- Water Cards -->
             <div class="card" id="sheet1-water-card">
@@ -1851,7 +1860,7 @@ $sheetData = fetchGoogleSheetData();
                     <h3>ปริมาณน้ำ</h3>
                     <div class="status-container">
                         <span class="zone-badge">โซน A</span>
-                        <span class="card-status">ออนไลน์</span>
+                        
                     </div>
                 </div>
                 <div class="value-container">
@@ -1871,7 +1880,7 @@ $sheetData = fetchGoogleSheetData();
                     <h3>ปริมาณน้ำ</h3>
                     <div class="status-container">
                         <span class="zone-badge">โซน B</span>
-                        <span class="card-status">ออนไลน์</span>
+                        
                     </div>
                 </div>
                 <div class="value-container">
@@ -1900,7 +1909,7 @@ $sheetData = fetchGoogleSheetData();
                     <i class="fas fa-sync-alt"></i> อัพเดทข้อมูล
                 </button>
                 <form method="POST" style="display: inline-block;">
-                    <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                     <input type="hidden" name="download_spray_data" value="1">
                     <button type="submit" class="refresh-btn download-btn">
                         <i class="fas fa-download"></i> บันทึกข้อมูลการฉีดพ่น
@@ -1935,19 +1944,23 @@ $sheetData = fetchGoogleSheetData();
         </div>
 
         <!-- Insect Count Chart Card (NEW) -->
-        <div class="card bg-white rounded-lg shadow p-6 mt-6">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-bold">จำนวนแมลงที่พบในแต่ละช่วงเวลา</h2>
-            <select id="insect-chart-mode" class="border rounded px-2 py-1">
-              <option value="day">รายวัน</option>
-              <option value="month">รายเดือน</option>
-              <option value="year">รายปี</option>
-            </select>
+        <h2 class="section-title"><i class="fas fa-chart-line"></i> รายงานและกราฟ</h2>
+        <div class="card chart-card">
+          <div class="card-header">
+            <i class="fas fa-chart-line"></i>
+            <h3>แนวโน้มจำนวนแมลง</h3>
+            <div class="status-container">
+              <select id="insect-chart-mode" class="interval-selector small">
+                <option value="day">รายวัน</option>
+                <option value="month">รายเดือน</option>
+                <option value="year">รายปี</option>
+              </select>
+            </div>
           </div>
-          <div class="w-full h-96">
+          <div class="chart-body">
             <canvas id="insect-count-chart"></canvas>
           </div>
-          <div id="insect-chart-legend" class="mt-4 flex flex-wrap gap-4"></div>
+          <div id="insect-chart-legend" class="chart-legend"></div>
         </div>
     </div>
 
@@ -1986,7 +1999,7 @@ $sheetData = fetchGoogleSheetData();
                     </ul>
                     <br>
                     <small style="color: var(--text-muted);">
-                        💡 <strong>หมายเหตุ:</strong> ระบบนี้ใช้ Google Gemini AI หากต้องการใช้งาน กรุณาตั้งค่า API Key ในไฟล์ Dashboard.php
+                        💡 หมายเหตุ: ระบบ AI ตอบได้ทุกหัวข้อ โดยใช้ Google Gemini และแหล่งข้อมูลสาธารณะ (เช่น Wikipedia) อัตโนมัติเมื่อจำเป็น
                     </small>
                 </div>
                 <div class="ai-suggestions">
@@ -2012,22 +2025,59 @@ $sheetData = fetchGoogleSheetData();
         const spreadsheetId = '1Qp4sOxtHleHZPaUoyWK6bcM--LX-rm2omzTPGAIj_TA';
         const apiKey = 'AIzaSyBFSCGY_HxpxlvwuWoaCsmm2eiFsM75NSg'; // Replace with your actual API Key
         const sheets = ['Sheet1', 'Sheet2'];
-        let updateInterval = 10000;
         let intervalId = null;
+        let updateInterval = 60000; // default 1 นาที
+        let autoUpdatePaused = false;
         let currentThresholdValue = '<?php echo $thresholdValue; ?>'; // Get initial threshold from PHP
         const CRITICAL_PEST_THRESHOLD = () => parseInt(currentThresholdValue) || 10; // Use dynamic threshold, fallback to 10
         const CRITICAL_WATER_THRESHOLD = 20; // Percentage
 
         document.getElementById('current-year').textContent = new Date().getFullYear();
         
+        function show429Error() {
+            let el = document.getElementById('api-429-error');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'api-429-error';
+                el.style.position = 'fixed';
+                el.style.bottom = '20px';
+                el.style.right = '20px';
+                el.style.background = 'rgba(231,76,60,0.15)';
+                el.style.color = '#e74c3c';
+                el.style.padding = '16px 24px';
+                el.style.border = '1px solid rgba(231,76,60,0.4)';
+                el.style.borderRadius = '10px';
+                el.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35)';
+                el.style.backdropFilter = 'blur(6px)';
+                el.style.zIndex = 9999;
+                el.innerText = 'ขออภัย ระบบเรียกข้อมูลบ่อยเกินไป กรุณารอสักครู่ (5 นาที)';
+                document.body.appendChild(el);
+            }
+        }
+        function hide429Error() {
+            const el = document.getElementById('api-429-error');
+            if (el) el.remove();
+        }
+
         async function fetchSheetData() {
+            if (autoUpdatePaused) return;
             const data = {};
-            // ดึงค่าคงเดิม (D2, E2, F2, ...)
             for (const sheetName of sheets) {
                 const pestRange = `${sheetName}!D2:J2`;
                 const pestUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${pestRange}?key=${apiKey}`;
                 try {
                     const response = await fetch(pestUrl);
+                    if (response.status === 429) {
+                        show429Error();
+                        autoUpdatePaused = true;
+                        if (intervalId) clearInterval(intervalId);
+                        setTimeout(() => {
+                            autoUpdatePaused = false;
+                            hide429Error();
+                            startAutoUpdate(updateInterval);
+                        }, 300000); // 5 นาที
+                        throw new Error('429 Too Many Requests');
+                    }
                     if (!response.ok) throw new Error(`API request for pests failed (${sheetName}): ${response.status}`);
                     const json = await response.json();
                     data[sheetName] = {
@@ -2045,13 +2095,23 @@ $sheetData = fetchGoogleSheetData();
                     };
                 }
             }
-            // ดึง rows (A:G) ของแต่ละชีทใหม่ทุกครั้ง
             window.reportData = { Sheet1: [], Sheet2: [] };
             for (const sheetName of sheets) {
                 const range = `${sheetName}!A:G`;
                 const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${apiKey}`;
                 try {
                     const resp = await fetch(url);
+                    if (resp.status === 429) {
+                        show429Error();
+                        autoUpdatePaused = true;
+                        if (intervalId) clearInterval(intervalId);
+                        setTimeout(() => {
+                            autoUpdatePaused = false;
+                            hide429Error();
+                            startAutoUpdate(updateInterval);
+                        }, 300000); // 5 นาที
+                        throw new Error('429 Too Many Requests');
+                    }
                     if (!resp.ok) throw new Error(`API request for rows failed (${sheetName}): ${resp.status}`);
                     const json = await resp.json();
                     window.reportData[sheetName] = json.values || [];
@@ -2217,9 +2277,11 @@ $sheetData = fetchGoogleSheetData();
         
         function startAutoUpdate(newInterval) {
             if (intervalId) clearInterval(intervalId);
-            updateInterval = newInterval;
-            intervalId = setInterval(fetchSheetData, updateInterval);
-            fetchSheetData(); // Initial fetch
+            updateInterval = Math.max(newInterval, 60000); // อย่างน้อย 1 นาที
+            if (!autoUpdatePaused) {
+                intervalId = setInterval(fetchSheetData, updateInterval);
+                fetchSheetData(); // Initial fetch
+            }
         }
         
         // Create floating particles
@@ -2460,8 +2522,8 @@ $sheetData = fetchGoogleSheetData();
         insectNames.forEach((name, idx) => {
           const color = colors[idx % colors.length];
           const item = document.createElement('div');
-          item.className = 'flex items-center gap-2';
-          item.innerHTML = `<span style="display:inline-block;width:16px;height:16px;background:${color};border-radius:3px;"></span> <span>${name}</span>`;
+          item.className = 'legend-item';
+          item.innerHTML = `<span class="legend-color" style="background:${color};"></span><span class="legend-label">${name}</span>`;
           insectChartLegend.appendChild(item);
         });
       }
@@ -2547,36 +2609,31 @@ $sheetData = fetchGoogleSheetData();
         const aiChatInput = document.getElementById('ai-chat-input');
         const aiChatSend = document.getElementById('ai-chat-send');
 
-        // Google Gemini API Configuration
+        /* Google Gemini API Configuration */
         const GEMINI_API_KEY = 'AIzaSyCcyS9cNlYvYpYOG-AYKTalcVIVZa19YYI'; // เปลี่ยนเป็น API Key ของคุณ
-        const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+        const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
         // System prompt for AI context
-        const SYSTEM_PROMPT = `คุณเป็นผู้เชี่ยวชาญด้านการเกษตรและการป้องกันแมลงศัตรูพืชที่มีประสบการณ์มากกว่า 20 ปี คุณมีความรู้เกี่ยวกับ:
+        const SYSTEM_PROMPT = `คุณเป็นผู้ช่วยอัจฉริยะที่ตอบคำถามได้ทุกหัวข้อเป็นภาษาไทยเสมอ โดย
+- ให้ข้อมูลที่ถูกต้อง กระชับ และอ้างอิงได้เมื่อเหมาะสม
+- อธิบายขั้นตอนหรือเหตุผลเมื่อคำตอบต้องใช้การวิเคราะห์
+- เมื่อคำถามเกี่ยวข้องกับระบบ Smart Farming Dashboard ให้เพิ่มคำแนะนำเชิงปฏิบัติ (เช่น การตั้งค่าเกณฑ์แจ้งเตือน การดูรายงาน ฯลฯ)
+- หากหัวข้อสุ่มเสี่ยง/อันตราย ให้เน้นความปลอดภัยและข้อจำกัด
+- ถ้าข้อมูลไม่เพียงพอ ให้ถามย้อนเพื่อเก็บรายละเอียดเพิ่มเติม
 
-1. ระบบติดตามแมลงศัตรูพืชแบบ Smart Farming
-2. วิธีการป้องกันและจัดการแมลงศัตรูพืช
-3. เทคนิคการเกษตรสมัยใหม่
-4. การใช้เทคโนโลยี IoT ในการเกษตร
-5. การจัดการสภาพแวดล้อมเพื่อลดการระบาดของแมลง
-
-โปรดตอบคำถามด้วยข้อมูลที่ถูกต้อง ครบถ้วน และเป็นประโยชน์สำหรับเกษตรกร ให้คำแนะนำที่เป็นไปได้และปลอดภัย ใช้ภาษาที่เข้าใจง่าย และให้ตัวอย่างที่เป็นประโยชน์
-
-หากเป็นคำถามเกี่ยวกับระบบ Smart Farming Dashboard ให้อธิบายฟีเจอร์ต่างๆ เช่น:
-- การติดตามข้อมูลเรียลไทม์
-- การตั้งค่าเกณฑ์การแจ้งเตือน
-- การดูรายงานและสถิติ
-- การจัดการข้อมูลในแต่ละโซน
-
-ตอบเป็นภาษาไทยเสมอ และให้ข้อมูลที่เป็นประโยชน์สำหรับผู้ใช้งานระบบนี้`;
+รูปแบบการตอบ:
+- ภาษาไทย ลื่นไหล อ่านง่าย
+- หลีกเลี่ยงการคาดเดาเกินข้อมูล
+- หากอ้างอิงแหล่งข้อมูลสาธารณะ ให้ระบุลิงก์ที่เกี่ยวข้องเมื่อเหมาะสม`;
 
         // AI Response Function using Gemini API
         async function getAIResponse(question) {
             try {
-                const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+                const response = await fetch(GEMINI_API_URL, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-Goog-Api-Key': GEMINI_API_KEY
                     },
                     body: JSON.stringify({
                         contents: [{
@@ -2606,6 +2663,33 @@ $sheetData = fetchGoogleSheetData();
                 }
             } catch (error) {
                 console.error('Error calling Gemini API:', error);
+                // Try Wikipedia fallback (no API key, CORS-enabled)
+                try {
+                    const isThai = /[ก-๙]/.test(question);
+                    const langs = isThai ? ['th','en'] : ['en','th'];
+                    for (const lang of langs) {
+                        // Search best title
+                        const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=opensearch&format=json&limit=1&origin=*&search=${encodeURIComponent(question)}`;
+                        const s = await fetch(searchUrl);
+                        if (s.ok) {
+                            const arr = await s.json();
+                            const title = arr?.[1]?.[0];
+                            if (title) {
+                                const summaryUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+                                const r = await fetch(summaryUrl);
+                                if (r.ok) {
+                                    const json = await r.json();
+                                    if (json?.extract) {
+                                        const link = json?.content_urls?.desktop?.page || json?.content_urls?.mobile?.page;
+                                        return `${json.extract}\n\nแหล่งข้อมูล: ${link || `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`}`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Wikipedia fallback error:', e);
+                }
                 
                 // Fallback to static responses if API fails
                 const fallbackResponses = {
@@ -2722,17 +2806,7 @@ $sheetData = fetchGoogleSheetData();
    - ใช้เครื่องมือที่สะอาด
    - จัดเก็บผลผลิตอย่างเหมาะสม`,
 
-                    'default': `ขอบคุณสำหรับคำถามครับ! 
-
-สำหรับคำถามที่เฉพาะเจาะจงมากขึ้น กรุณาให้รายละเอียดเพิ่มเติม เช่น:
-- ชนิดของพืชที่ปลูก
-- ชนิดของแมลงที่พบ
-- สภาพแวดล้อมของแปลง
-- ปัญหาที่เจอ
-
-หรือคุณสามารถเลือกคำถามจากปุ่มแนะนำด้านบนได้ครับ
-
-**หมายเหตุ:** ระบบ AI กำลังใช้ข้อมูลสำรอง เนื่องจากไม่สามารถเชื่อมต่อกับ Google Gemini API ได้ กรุณาตรวจสอบการตั้งค่า API Key`
+                    'default': `ยังไม่พบข้อมูลที่ชัดเจนสำหรับคำถามนี้ในขณะนี้ ลองอธิบายเพิ่มเติมหรือลองใช้คำหลักที่เฉพาะเจาะจงขึ้น เช่น ใส่ปี/สถานที่/เงื่อนไข เพื่อให้ AI ค้นหาและสรุปได้แม่นยำขึ้น`
                 };
 
                 // Simple keyword matching for fallback
