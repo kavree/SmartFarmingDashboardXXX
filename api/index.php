@@ -1263,6 +1263,49 @@ $sheetData = fetchGoogleSheetData();
             color: var(--warning-color);
         }
         
+        /* Pagination styles */
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+            gap: 1rem;
+        }
+        .pagination-btn {
+            background: var(--gradient-primary);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.4rem;
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            box-shadow: 0 4px 14px rgba(0, 188, 212, 0.25);
+            transition: var(--transition);
+            user-select: none;
+        }
+        .pagination-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 188, 212, 0.35);
+        }
+        .pagination-btn.disabled,
+        .pagination-btn:disabled {
+            background: linear-gradient(135deg, #5b6b7a, #455564);
+            color: #d0d6db;
+            cursor: not-allowed;
+            opacity: 0.8;
+            box-shadow: none;
+            transform: none;
+        }
+        .pagination-info {
+            color: var(--text-muted);
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
         /* Responsive Design */
         @media (max-width: 1200px) {
             .container {
@@ -2335,6 +2378,9 @@ $sheetData = fetchGoogleSheetData();
             const bugwormResult = document.getElementById('bugworm-detail-result');
 
             let bugwormRows = [];
+            let bugwormFoundRows = [];
+            let bugwormCurrentPage = 1;
+            const BUGWORM_PAGE_SIZE = 10;
 
             async function loadBugwormDates() {
                 bugwormDateDropdown.innerHTML = '<option value="">กำลังโหลดวันที่...</option>';
@@ -2371,40 +2417,54 @@ $sheetData = fetchGoogleSheetData();
                 }
             }
 
-            bugwormZone.addEventListener('change', loadBugwormDates);
+            // รีเซ็ตหน้าปัจจุบันเมื่อเปลี่ยนโซน และโหลดวันที่ใหม่
+            bugwormZone.addEventListener('change', () => {
+                bugwormCurrentPage = 1;
+                loadBugwormDates();
+            });
             // โหลดวันที่ครั้งแรก
             loadBugwormDates();
 
-            bugwormBtn.addEventListener('click', function () {
-                const dateVal = bugwormDateDropdown.value;
-                if (!dateVal) {
-                  bugwormResult.innerHTML = '<div class="bugworm-no-data"><i class="fas fa-info-circle"></i> กรุณาเลือกวันที่</div>';
-                  return;
+            // อัปเดตแถวที่ตรงกับวันที่ที่เลือก (ไม่สนใจเวลา)
+            function updateBugwormFoundRows(dateVal) {
+                bugwormFoundRows = bugwormRows.filter(row => row[0] && row[0].startsWith(dateVal));
+            }
+
+            // เรนเดอร์ผลลัพธ์พร้อมระบบแบ่งหน้า และสรุปจำนวน Grasshopper/Caterpillar
+            function renderBugwormView(dateVal) {
+                if (!bugwormFoundRows || bugwormFoundRows.length === 0) {
+                    bugwormResult.innerHTML = '<div class="bugworm-no-data"><i class="fas fa-info-circle"></i> ไม่พบข้อมูลสำหรับวันที่นี้</div>';
+                    return;
                 }
-                // หา row ที่ตรงกับวันที่ (ไม่สนใจเวลา)
-                const foundRows = bugwormRows.filter(row => row[0] && row[0].startsWith(dateVal));
-                if (foundRows.length === 0) {
-                  bugwormResult.innerHTML = '<div class="bugworm-no-data"><i class="fas fa-info-circle"></i> ไม่พบข้อมูลสำหรับวันที่นี้</div>';
-                  return;
-                }
-                // กำหนดชื่อที่ต้องการนับ
-                let name1 = bugwormZone.value === 'Sheet1' ? 'G-HOP' : 'TK';
-                let name2 = 'FA1';
-                // สร้างตารางแสดงข้อมูลจริง (เวลา | ชื่อ)
-                let tableRows = foundRows.map(row => {
-                  let time = row[0].split(' ')[1] || '-';
-                  let name = row[1] ? row[1].trim() : '-';
-                  return `<tr><td>${time}</td><td>${name}</td></tr>`;
-                }).join('');
-                // นับจำนวนครั้งที่แต่ละชื่อปรากฏ
+
+                // คำนวณหน้าทั้งหมด
+                const totalPages = Math.max(1, Math.ceil(bugwormFoundRows.length / BUGWORM_PAGE_SIZE));
+                if (bugwormCurrentPage > totalPages) bugwormCurrentPage = totalPages;
+
+                const start = (bugwormCurrentPage - 1) * BUGWORM_PAGE_SIZE;
+                const pageRows = bugwormFoundRows.slice(start, start + BUGWORM_PAGE_SIZE);
+
+                // นับชื่อแบบไม่สนตัวพิมพ์
+                const name1 = 'Grasshopper';
+                const name2 = 'Caterpillar';
                 let sum1 = 0, sum2 = 0;
-                foundRows.forEach(row => {
-                  let name = row[1] ? row[1].trim() : '';
-                  if (name === name1) sum1++;
-                  if (name === name2) sum2++;
+                bugwormFoundRows.forEach(row => {
+                    const nm = (row[1] ? row[1].trim() : '').toLowerCase();
+                    if (nm === name1.toLowerCase()) sum1++;
+                    if (nm === name2.toLowerCase()) sum2++;
                 });
+
+                const tableRows = pageRows.map(row => {
+                    const time = row[0].split(' ')[1] || '-';
+                    const name = row[1] ? row[1].trim() : '-';
+                    return `<tr><td>${time}</td><td>${name}</td></tr>`;
+                }).join('');
+
+                const isFirst = bugwormCurrentPage === 1;
+                const isLast = bugwormCurrentPage === totalPages;
+
                 bugwormResult.innerHTML = `
-                  <table class=\"bugworm-table\">
+                  <table class="bugworm-table">
                     <thead>
                       <tr><th>เวลา</th><th>ชื่อ</th></tr>
                     </thead>
@@ -2412,14 +2472,52 @@ $sheetData = fetchGoogleSheetData();
                       ${tableRows}
                     </tbody>
                     <tfoot>
-                      <tr><td style=\"text-align:right;\">รวม ${name1}</td><td style=\"text-align:right;\">${sum1}</td></tr>
-                      <tr><td style=\"text-align:right;\">รวม ${name2}</td><td style=\"text-align:right;\">${sum2}</td></tr>
+                      <tr><td style="text-align:right;">รวม ${name1}</td><td style="text-align:right;">${sum1}</td></tr>
+                      <tr><td style="text-align:right;">รวม ${name2}</td><td style="text-align:right;">${sum2}</td></tr>
                     </tfoot>
                   </table>
-                  <div style=\"margin-top: 1rem; color: var(--dark-color); font-size: 0.95rem;\">
+                  <div class="pagination-container">
+                    <button class="pagination-btn ${isFirst ? 'disabled' : ''}" id="bugworm-prev-btn" ${isFirst ? 'disabled' : ''}>
+                      <i class="fas fa-angle-left"></i> Previous
+                    </button>
+                    <div class="pagination-info">หน้า ${bugwormCurrentPage} / ${totalPages}</div>
+                    <button class="pagination-btn ${isLast ? 'disabled' : ''}" id="bugworm-next-btn" ${isLast ? 'disabled' : ''}>
+                      Next <i class="fas fa-angle-right"></i>
+                    </button>
+                  </div>
+                  <div style="margin-top: 1rem; color: var(--dark-color); font-size: 0.95rem;">
                     วันที่: <b>${dateVal}</b> | โซน: <b>${bugwormZone.value === 'Sheet1' ? 'A' : 'B'}</b>
                   </div>
                 `;
+
+                // ผูกอีเวนต์ให้ปุ่มเปลี่ยนหน้า
+                const prevBtn = document.getElementById('bugworm-prev-btn');
+                const nextBtn = document.getElementById('bugworm-next-btn');
+
+                if (prevBtn && !isFirst) {
+                    prevBtn.addEventListener('click', () => {
+                        bugwormCurrentPage = Math.max(1, bugwormCurrentPage - 1);
+                        renderBugwormView(dateVal);
+                    });
+                }
+                if (nextBtn && !isLast) {
+                    nextBtn.addEventListener('click', () => {
+                        bugwormCurrentPage = Math.min(totalPages, bugwormCurrentPage + 1);
+                        renderBugwormView(dateVal);
+                    });
+                }
+            }
+
+            // ค้นหาและแสดงผลพร้อมแบ่งหน้าเมื่อกดปุ่ม
+            bugwormBtn.addEventListener('click', function () {
+                const dateVal = bugwormDateDropdown.value;
+                if (!dateVal) {
+                  bugwormResult.innerHTML = '<div class="bugworm-no-data"><i class="fas fa-info-circle"></i> กรุณาเลือกวันที่</div>';
+                  return;
+                }
+                bugwormCurrentPage = 1;
+                updateBugwormFoundRows(dateVal);
+                renderBugwormView(dateVal);
             });
         });
     </script>
